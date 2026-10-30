@@ -1,0 +1,9 @@
+# ./scripts/feeds install 要安装的软件包（每行一个，# 开头是注释）
+luci
+luci-i18n-base-zh-cn
+luci-i18n-firewall-zh-cn
+tcpdump
+iperf3
+mtr
+bird2
+bird2c

@@ -1,0 +1,342 @@
+diff --git a/target/linux/bmips/bcm6362/base-files/etc/board.d/01_leds b/target/linux/bmips/bcm6362/base-files/etc/board.d/01_leds
+index cb1d24c..f759a6e 100644
+--- a/target/linux/bmips/bcm6362/base-files/etc/board.d/01_leds
++++ b/target/linux/bmips/bcm6362/base-files/etc/board.d/01_leds
+@@ -9,6 +9,9 @@ case "$(board_name)" in
+ huawei,hg253s-v2)
+ 	ucidef_set_led_usbport "usb" "USB" "green:usb" "usb1-port1" "usb2-port1"
+ 	;;
++linksys,x3500)
++	ucidef_set_led_netdev "wan" "WAN" "green:wan" "wan" "link tx rx"
++	;;
+ netgear,dgnd3700-v2)
+ 	ucidef_set_led_usbport "usb1" "USB1" "green:usb1" "usb1-port1" "usb2-port1"
+ 	ucidef_set_led_usbport "usb2" "USB2" "green:usb2" "usb1-port2" "usb2-port2"
+diff --git a/target/linux/bmips/bcm6362/base-files/etc/board.d/02_network b/target/linux/bmips/bcm6362/base-files/etc/board.d/02_network
+index 7986f78..d98731c 100644
+--- a/target/linux/bmips/bcm6362/base-files/etc/board.d/02_network
++++ b/target/linux/bmips/bcm6362/base-files/etc/board.d/02_network
+@@ -6,6 +6,7 @@ board_config_update
+ 
+ case "$(board_name)" in
+ huawei,hg253s-v2 |\
++linksys,x3500 |\
+ netgear,dgnd3700-v2)
+ 	ucidef_set_bridge_device switch
+ 	ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" "wan"
+diff --git a/target/linux/bmips/dts/bcm6362-linksys-x3500.dts b/target/linux/bmips/dts/bcm6362-linksys-x3500.dts
+new file mode 100644
+index 0000000..ad6362b
+--- /dev/null
++++ b/target/linux/bmips/dts/bcm6362-linksys-x3500.dts
+@@ -0,0 +1,255 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#include "bcm6362.dtsi"
++
++/ {
++	model = "Linksys X3500";
++	compatible = "linksys,x3500", "brcm,bcm6362";
++
++	aliases {
++		led-boot = &led_power_green;
++		led-failsafe = &led_power_red;
++		led-running = &led_power_green;
++		led-upgrade = &led_power_red;
++	};
++
++	keys {
++		compatible = "gpio-keys-polled";
++		poll-interval = <100>;
++
++		reset {
++			label = "reset";
++			gpios = <&gpio 24 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_RESTART>;
++			debounce-interval = <60>;
++		};
++
++		wlan {
++			label = "wlan";
++			gpios = <&gpio 25 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_RFKILL>;
++			debounce-interval = <60>;
++		};
++	};
++
++	/*
++	 * GPIO numbers from the stock BpGetCisco_LED*_Gpio() table, verified
++	 * on the device. The bootloader muxes most of these to the LED
++	 * controller. The LAN port LEDs are driven by the BCM53125 (power
++	 * gated by GPIO 0) and the Wi-Fi LED is not connected to a SoC GPIO.
++	 */
++	leds {
++		compatible = "gpio-leds";
++
++		led-1 {
++			function = LED_FUNCTION_WPS;
++			color = <LED_COLOR_ID_GREEN>;
++			gpios = <&gpio 1 GPIO_ACTIVE_LOW>;
++		};
++
++		led_power_green: led-12 {
++			function = LED_FUNCTION_POWER;
++			color = <LED_COLOR_ID_GREEN>;
++			gpios = <&gpio 12 GPIO_ACTIVE_LOW>;
++			default-state = "keep";
++		};
++
++		led_power_red: led-13 {
++			function = LED_FUNCTION_POWER;
++			color = <LED_COLOR_ID_RED>;
++			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
++		};
++
++		led-14 {
++			function = "dsl";
++			color = <LED_COLOR_ID_GREEN>;
++			gpios = <&gpio 14 GPIO_ACTIVE_LOW>;
++		};
++
++		led-16 {
++			function = LED_FUNCTION_WAN;
++			color = <LED_COLOR_ID_RED>;
++			gpios = <&gpio 16 GPIO_ACTIVE_LOW>;
++		};
++
++		led-17 {
++			function = LED_FUNCTION_WAN;
++			color = <LED_COLOR_ID_GREEN>;
++			gpios = <&gpio 17 GPIO_ACTIVE_LOW>;
++		};
++	};
++};
++
++&ehci {
++	status = "okay";
++};
++
++&ethernet {
++	status = "okay";
++
++	nvmem-cells = <&macaddr_cfe_6a0 0>;
++	nvmem-cell-names = "mac-address";
++};
++
++&gpio {
++	/* Stock firmware drives this high to enable the LAN port LEDs */
++	led-enable-hog {
++		gpio-hog;
++		gpios = <0 GPIO_ACTIVE_HIGH>;
++		output-high;
++		line-name = "led-enable";
++	};
++};
++
++&hsspi {
++	status = "okay";
++
++	flash@0 {
++		compatible = "jedec,spi-nor";
++		spi-max-frequency = <16666667>;
++		spi-tx-bus-width = <2>;
++		spi-rx-bus-width = <2>;
++		reg = <0>;
++
++		#address-cells = <1>;
++		#size-cells = <1>;
++
++		/*
++		 * Only "firmware" is writable. The CFE, the stock scratch pad and
++		 * the PSI (stock settings) are kept read-only.
++		 */
++		partitions {
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			partition@0 {
++				reg = <0x000000 0x010000>;
++				label = "cfe";
++				read-only;
++
++				nvmem-layout {
++					compatible = "fixed-layout";
++					#address-cells = <1>;
++					#size-cells = <1>;
++
++					macaddr_cfe_6a0: macaddr@6a0 {
++						compatible = "mac-base";
++						reg = <0x6a0 0x6>;
++						#nvmem-cell-cells = <1>;
++					};
++				};
++			};
++
++			partition@10000 {
++				compatible = "brcm,bcm963xx-imagetag";
++				reg = <0x010000 0xfc0000>;
++				label = "firmware";
++			};
++
++			/* Broadcom scratch pad (stock Wi-Fi settings) */
++			partition@fd0000 {
++				reg = <0xfd0000 0x010000>;
++				label = "scratchpad";
++				read-only;
++			};
++
++			partition@fe0000 {
++				reg = <0xfe0000 0x020000>;
++				label = "nvram";
++				read-only;
++			};
++		};
++	};
++};
++
++&lsspi {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_spi_cs2>;
++
++	switch@2 {
++		compatible = "brcm,bcm53125";
++		reg = <2>;
++		spi-max-frequency = <781000>;
++
++		dsa,member = <1 0>;
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				label = "wan";
++			};
++
++			port@1 {
++				reg = <1>;
++				label = "lan4";
++			};
++
++			port@2 {
++				reg = <2>;
++				label = "lan3";
++			};
++
++			port@3 {
++				reg = <3>;
++				label = "lan2";
++			};
++
++			port@4 {
++				reg = <4>;
++				label = "lan1";
++			};
++
++			port@8 {
++				reg = <8>;
++
++				phy-mode = "rgmii";
++				ethernet = <&switch0port4>;
++
++				fixed-link {
++					speed = <1000>;
++					full-duplex;
++				};
++			};
++		};
++	};
++};
++
++&ohci {
++	status = "okay";
++};
++
++&pcie {
++	status = "okay";
++};
++
++&switch0 {
++	dsa,member = <0 0>;
++
++	ports {
++		switch0port4: port@4 {
++			reg = <4>;
++			label = "extsw";
++
++			phy-mode = "rgmii";
++
++			fixed-link {
++				speed = <1000>;
++				full-duplex;
++			};
++		};
++	};
++};
++
++&uart0 {
++	status = "okay";
++};
++
++&usbh {
++	status = "okay";
++};
+diff --git a/target/linux/bmips/image/bcm6362.mk b/target/linux/bmips/image/bcm6362.mk
+index 9731973..c6b89b6 100644
+--- a/target/linux/bmips/image/bcm6362.mk
++++ b/target/linux/bmips/image/bcm6362.mk
+@@ -22,6 +22,18 @@ define Device/huawei_hg253s-v2
+ endef
+ TARGET_DEVICES += huawei_hg253s-v2
+ 
++define Device/linksys_x3500
++  $(Device/bcm63xx-cfe)
++  DEVICE_VENDOR := Linksys
++  DEVICE_MODEL := X3500
++  CHIP_ID := 6362
++  CFE_BOARD_ID := CiscoX3500
++  FLASH_MB := 16
++  DEVICE_PACKAGES += $(USB2_PACKAGES) \
++    $(B43_PACKAGES) kmod-leds-gpio
++endef
++TARGET_DEVICES += linksys_x3500
++
+ define Device/netgear_dgnd3700-v2
+   $(Device/bcm63xx-nand)
+   DEVICE_VENDOR := NETGEAR
+diff --git a/target/linux/bmips/patches-6.6/120-pinctrl-bcm6362-fix-gpio-mode-mask.patch b/target/linux/bmips/patches-6.6/120-pinctrl-bcm6362-fix-gpio-mode-mask.patch
+new file mode 100644
+index 0000000..e79b495
+--- /dev/null
++++ b/target/linux/bmips/patches-6.6/120-pinctrl-bcm6362-fix-gpio-mode-mask.patch
+@@ -0,0 +1,26 @@
++From: Linksys X3500 port <noreply@example.invalid>
++Subject: [PATCH] pinctrl: bcm: bcm6362: fix GPIO mode mask
++
++bcm6362_set_gpio() passes the bank pin *number* returned by
++bcm63xx_bank_pin() directly as the mask to regmap_update_bits(), instead
++of the bit for that pin. As a result, requesting a pin as GPIO clears
++the wrong bits in the MODE/LED/CTRL registers and leaves the pin muxed
++to its previous function. E.g. on the Linksys X3500 the bootloader muxes
++GPIO 12-17 to the LED controller, and these pins could not be driven as
++GPIOs afterwards (LED register stayed at 0x000370e0).
++
++Use BIT() like bcm63268_set_gpio() does.
++
++Fixes: 705791e23ecd ("pinctrl: add a pincontrol driver for BCM6362")
++---
++--- a/drivers/pinctrl/bcm/pinctrl-bcm6362.c
+++++ b/drivers/pinctrl/bcm/pinctrl-bcm6362.c
++@@ -484,7 +484,7 @@
++ {
++ 	const struct pinctrl_pin_desc *desc = &bcm6362_pins[pin];
++ 	unsigned int basemode = (uintptr_t)desc->drv_data;
++-	unsigned int mask = bcm63xx_bank_pin(pin);
+++	unsigned int mask = BIT(bcm63xx_bank_pin(pin));
++ 
++ 	if (basemode)
++ 		regmap_update_bits(pc->regs, BCM6362_BASEMODE_REG, basemode, 0);

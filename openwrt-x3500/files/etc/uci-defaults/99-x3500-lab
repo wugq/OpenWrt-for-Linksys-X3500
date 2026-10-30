@@ -1,0 +1,15 @@
+#!/bin/sh
+# X3500 实验版的默认设置，只在首次开机（或恢复出厂设置后）执行一次
+
+uci -q batch <<'UCI'
+set system.@system[0].hostname='X3500'
+set system.@system[0].zonename='Pacific/Auckland'
+set system.@system[0].timezone='NZST-12NZDT,M9.5.0,M4.1.0/3'
+set network.lan.ipaddr='192.168.2.1'
+set luci.main.lang='zh_cn'
+commit system
+commit network
+commit luci
+UCI
+
+exit 0
